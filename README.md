@@ -207,3 +207,17 @@ python ingest_new_knowledge.py
 <div align="center">
   <b>Developed with 💙 for XortLogix • Powered by Google DeepMind Gemini & ChromaDB</b>
 </div>
+
+---
+
+## 👨‍💻 Author & Connect
+
+**Muhammad Okasha**  
+*AI Systems & Full-Stack Software Architect*  
+- **GitHub:** [@muhammadokashapak](https://github.com/muhammadokashapak)
+- **Portfolio:** [Muhammad Okasha 3D Portfolio](https://github.com/muhammadokashapak/Portfolio-3D)
+
+---
+
+## 📄 License
+This project is open-source and licensed under the [MIT License](LICENSE).
