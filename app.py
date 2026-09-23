@@ -41,17 +41,19 @@ ENV_PATH = os.path.join(BASE_DIR, ".env")
 load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
-if IS_VERCEL:
-    LOCAL_DB_PATH = "/tmp/ghl_chroma_db"
-    src_db = os.path.join(BASE_DIR, "ghl_chroma_db")
-    if not os.path.exists(LOCAL_DB_PATH) and os.path.exists(src_db):
-        import shutil
-        try:
-            shutil.copytree(src_db, LOCAL_DB_PATH)
-        except Exception as e:
-            print(f"Copying ChromaDB to /tmp failed: {e}")
-else:
-    LOCAL_DB_PATH = os.path.join(BASE_DIR, "ghl_chroma_db")
+LOCAL_DB_PATH = "/tmp/ghl_chroma_db" if IS_VERCEL else os.path.join(BASE_DIR, "ghl_chroma_db")
+
+def ensure_chroma_db_on_vercel():
+    if IS_VERCEL and not os.path.exists(LOCAL_DB_PATH):
+        src_db = os.path.join(BASE_DIR, "ghl_chroma_db")
+        if os.path.exists(src_db):
+            import shutil
+            try:
+                print("📦 [Vercel] Copying ChromaDB to /tmp on demand...")
+                shutil.copytree(src_db, LOCAL_DB_PATH)
+                print("✅ [Vercel] ChromaDB copied to /tmp.")
+            except Exception as e:
+                print(f"Copying ChromaDB to /tmp failed: {e}")
 
 class GeminiKeyPool:
     """
@@ -231,6 +233,7 @@ def get_chroma_collection():
     with _chroma_lock:
         if collection is None or collection is False:
             try:
+                ensure_chroma_db_on_vercel()
                 import chromadb
                 print("📦 Connecting to Local ChromaDB...")
                 client_chroma = chromadb.PersistentClient(path=LOCAL_DB_PATH)
@@ -311,8 +314,9 @@ def _warmup_background():
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 FastAPI server started. Initializing background warmup...")
-    threading.Thread(target=_warmup_background, daemon=True).start()
+    if not IS_VERCEL:
+        print("🚀 FastAPI server started. Initializing background warmup...")
+        threading.Thread(target=_warmup_background, daemon=True).start()
 
 # Auth Dependency
 def get_current_user(ghl_session: Optional[str] = Cookie(None), authorization: Optional[str] = Header(None)):

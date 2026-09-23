@@ -62,7 +62,7 @@ def _query_turso(sql: str, params=None):
         }
     )
     
-    with urllib.request.urlopen(req, timeout=12) as resp:
+    with urllib.request.urlopen(req, timeout=4.0) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         result = data["results"][0]
         if result["type"] == "error":
@@ -89,6 +89,9 @@ def _query_turso(sql: str, params=None):
 # --- Universal Database Runner ---
 
 def db_query(sql: str, params=None, fetchone=False, fetchall=False, commit=False):
+    global USE_TURSO
+    if not _db_initialized and not sql.strip().upper().startswith("CREATE"):
+        ensure_db_init()
     if USE_TURSO:
         try:
             rows, affected = _query_turso(sql, params)
@@ -100,6 +103,7 @@ def db_query(sql: str, params=None, fetchone=False, fetchall=False, commit=False
         except Exception as e:
             # Fallback to local if Turso fails or unreachable
             print(f"[Turso Error, falling back to local SQLite]: {e}")
+            USE_TURSO = False
 
     # Local SQLite Fallback
     conn = sqlite3.connect(LOCAL_DB_PATH, timeout=30)
@@ -503,5 +507,17 @@ def delete_user(user_id: str):
     affected = db_query("DELETE FROM users WHERE id = ?", [user_id], commit=True)
     return (affected or 0) > 0
 
-# Initialize DB on module load
-init_db()
+_db_initialized = False
+
+def ensure_db_init():
+    global _db_initialized
+    if not _db_initialized:
+        _db_initialized = True
+        try:
+            init_db()
+        except Exception as e:
+            print(f"[DB Init Note]: {e}")
+
+# Only initialize eagerly on local/persistent servers, lazy on serverless
+if not IS_VERCEL:
+    ensure_db_init()
