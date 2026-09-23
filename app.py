@@ -216,10 +216,13 @@ async def vercel_path_rewrite_middleware(request: Request, call_next):
         print(f"Path rewrite note: {e}")
     return await call_next(request)
 
-# Mount Static Assets Directory
+# Mount Static Assets Directory (Only in non-Vercel local environments; Vercel serves static files via Edge CDN)
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if not IS_VERCEL and os.path.exists(STATIC_DIR):
+    try:
+        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    except Exception as e:
+        print(f"StaticFiles mount note: {e}")
 
 # Global Variables for Lazy Connections with Thread-Safety
 import threading
@@ -388,9 +391,9 @@ class KeyValidateRequest(BaseModel):
 @app.get("/")
 async def serve_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_path):
-        raise HTTPException(status_code=404, detail="static/index.html not found.")
-    return FileResponse(index_path)
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return JSONResponse(content={"status": "online", "service": "XortLogix High Level Assistant"})
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -943,7 +946,7 @@ async def upload_knowledge_file(
             chunks.append("\n\n".join(curr))
 
         # Save copy into knowledge_uploads directory
-        uploads_dir = os.path.join(BASE_DIR, "knowledge_uploads")
+        uploads_dir = "/tmp/knowledge_uploads" if IS_VERCEL else os.path.join(BASE_DIR, "knowledge_uploads")
         os.makedirs(uploads_dir, exist_ok=True)
         save_path = os.path.join(uploads_dir, file.filename)
         with open(save_path, "wb") as f:
