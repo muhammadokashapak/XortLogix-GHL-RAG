@@ -1,5 +1,6 @@
 .git
 .gitignore
+ghl_chroma_db/
 scraped_ghl_docs/
 *.pdf
 compile_pdf.py
