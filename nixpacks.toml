@@ -2,7 +2,7 @@
 nixPkgs = ["python310"]
 
 [phases.install]
-cmds = ["pip install -r 'XortLogix High Level/requirements.txt'"]
+cmds = ["pip install -r 'GHL RAG/requirements.txt'"]
 
 [start]
-cmd = "cd 'XortLogix High Level' && uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}"
+cmd = "cd 'GHL RAG' && uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}"

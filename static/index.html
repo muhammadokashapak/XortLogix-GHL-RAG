@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#171717">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>XortLogix High Level Assistant - ChatGPT AI</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Highlight.js CSS for Dark Syntax Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            const errDiv = document.createElement('div');
+            errDiv.style.cssText = 'position:fixed;top:0;left:0;background:#ef4444;color:white;z-index:9999;padding:12px 16px;font-size:12px;max-width:100%;word-break:break-all;';
+            errDiv.textContent = 'Error: ' + msg + ' (' + lineNo + ':' + columnNo + ')';
+            document.body.appendChild(errDiv);
+            setTimeout(() => errDiv.remove(), 6000);
+            return false;
+        };
+    </script>
+
+    <!-- AUTHENTICATION CONTAINER (LOGIN & SIGNUP) -->
+    <div class="auth-wrapper" id="auth-wrapper">
+        <div class="auth-card-container">
+            <!-- Brand Logo Header -->
+            <div class="auth-brand-header">
+                <div class="auth-logo-badge">⚡</div>
+                <h2>XortLogix High Level Assistant</h2>
+                <p>Sign in to access your AI Technical Assistant & Saved Conversations</p>
+            </div>
+
+            <!-- LOGIN CARD -->
+            <div class="auth-card" id="login-card">
+                <h3>Welcome Back</h3>
+                <form id="login-form" novalidate>
+                    <div class="form-group">
+                        <label for="login-email">Email Address</label>
+                        <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="email" inputmode="email">
+                        <span class="error-msg" id="login-email-error"></span>
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-link">
+                            <label for="login-password">Password</label>
+                            <a href="#" id="forgot-password-link" class="forgot-link">Forgot password?</a>
+                        </div>
+                        <div class="input-with-icon">
+                            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+                            <button class="icon-btn toggle-password-btn" type="button" data-target="login-password" title="Toggle password visibility">
+                                👁️
+                            </button>
+                        </div>
+                        <span class="error-msg" id="login-password-error"></span>
+                    </div>
+
+                    <div class="auth-feedback danger-feedback hidden" id="login-error-alert"></div>
+
+                    <button type="submit" class="auth-submit-btn" id="login-submit-btn">
+                        <span class="btn-text">Log In</span>
+                        <span class="btn-spinner hidden"></span>
+                    </button>
+                </form>
+
+                <div class="auth-footer">
+                    <span class="footer-note">Internal Enterprise Tool • GoHighLevel AI</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APPLICATION CONTAINER (PROTECTED VIEW) -->
+    
+    <!-- Admin View -->
+    <div class="admin-view hidden" id="admin-view">
+        <!-- Top Navbar -->
+        <header class="admin-header">
+            <div class="admin-header-brand">
+                <div class="admin-logo-badge">⚡</div>
+                <h2 class="admin-header-title">Master Admin Dashboard</h2>
+            </div>
+            <div class="admin-header-user">
+                <div class="admin-user-email">muhammad.okasha2146@gmail.com</div>
+                <button class="secondary-btn admin-logout-btn" id="admin-logout-btn">Log Out</button>
+            </div>
+        </header>
+
+        <!-- Main Content area -->
+        <main class="admin-main">
+            <div class="admin-content-container">
+                <div class="admin-toolbar">
+                    <div class="admin-toolbar-text">
+                        <h1 class="admin-title">Employee Accounts</h1>
+                        <p class="admin-subtitle">Manage access for your team members to the GoHighLevel AI Assistant.</p>
+                    </div>
+                    <div class="admin-toolbar-actions">
+                        <div class="admin-search-wrapper">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="admin-search-input" placeholder="Search team members...">
+                        </div>
+                        <button class="primary-btn admin-add-btn" id="admin-add-user-btn">
+                            <span>+</span> <span>Add Employee</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div class="admin-table-card">
+                    <div class="admin-table-scroll-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Employee Details</th>
+                                    <th class="text-center">Activity</th>
+                                    <th class="text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-users-table-body">
+                                <!-- JS will populate rows here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Admin Add User Modal -->
+    <div class="modal-overlay hidden" id="admin-add-user-modal">
+        <div class="modal-box small-modal">
+            <div class="modal-header">
+                <h3>👥 Create Employee Account</h3>
+                <button class="icon-btn modal-close-btn" id="close-admin-add-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Enter the details for the new employee. They will use this email and password to access the system.</p>
+                
+                <div class="auth-feedback danger-feedback hidden" id="admin-error-alert"></div>
+                
+                <div class="form-group">
+                    <label for="new-user-name">Full Name</label>
+                    <input type="text" id="new-user-name" placeholder="e.g. Jane Doe" autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="new-user-email">Email Address</label>
+                    <input type="email" id="new-user-email" placeholder="name@company.com" autocomplete="email" inputmode="email">
+                </div>
+                <div class="form-group">
+                    <label for="new-user-pwd">Temporary Password</label>
+                    <input type="text" id="new-user-pwd" placeholder="e.g. welcome123">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn" id="admin-cancel-add-btn">Cancel</button>
+                <button class="primary-btn" id="admin-save-user-btn">Create Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat App View -->
+    <div class="app-container hidden" id="app-view">
+        <!-- Sidebar Backdrop Overlay for Mobile -->
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <button class="new-chat-btn" id="new-chat-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>New Chat</span>
+                </button>
+                <button class="icon-btn sidebar-close-btn" id="sidebar-close-btn" title="Close Sidebar" aria-label="Close sidebar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Search History Input -->
+            <div class="sidebar-search-box">
+                <input type="text" id="search-conversations-input" placeholder="🔍 Search conversations..." autocomplete="off">
+            </div>
+
+            <!-- Recent Conversations History -->
+            <div class="history-section">
+                <div class="section-title">CHAT HISTORY</div>
+                <div class="history-list" id="history-list">
+                    <!-- Date-grouped chat sessions loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Sidebar User Profile Footer -->
+            <div class="sidebar-user-footer">
+                <div class="user-profile-btn" id="user-profile-menu-trigger">
+                    <div class="user-avatar" id="user-avatar-initials">U</div>
+                    <div class="user-info-text">
+                        <span class="user-display-name" id="user-display-name">Loading...</span>
+                        <span class="user-display-email" id="user-display-email">...</span>
+                    </div>
+                    <div class="user-menu-dots">•••</div>
+                </div>
+
+                <!-- Account Popover Menu -->
+                <div class="user-account-menu hidden" id="user-account-menu">
+                    <button class="menu-item" id="open-profile-menu-item">
+                        👤 Profile & Preferences
+                    </button>
+                    <div class="menu-divider"></div>
+                    <button class="menu-item danger-item" id="logout-menu-item">
+                        🚪 Log Out
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main View Area -->
+        <main class="main-content">
+            <!-- Header Bar -->
+            <header class="top-header">
+                <div class="header-left">
+                    <button class="icon-btn sidebar-open-btn" id="sidebar-open-btn" title="Toggle Sidebar" aria-label="Toggle navigation sidebar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <div class="header-title-container">
+                        <span class="active-chat-title" id="active-chat-title">XortLogix High Level Assistant</span>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="header-action-btn danger-btn-subtle hidden" id="header-delete-btn" title="Delete current conversation" aria-label="Delete chat">
+                        <span class="btn-icon">🗑️</span>
+                        <span class="btn-label">Delete Chat</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Chat View Window -->
+            <div class="chat-container" id="chat-container">
+                <!-- Welcome View (Default state when no messages) -->
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-icon-wrapper">
+                        <div class="glow-effect"></div>
+                        <div class="icon-avatar">⚡</div>
+                    </div>
+                    <h1 class="welcome-heading">XortLogix High Level Assistant</h1>
+                    <p class="welcome-subtext">Ask anything about GoHighLevel features, workflows, integrations, API endpoints, and technical setups.</p>
+
+                    <!-- Suggestion Cards Grid -->
+                    <div class="cards-grid">
+                        <div class="card-item" data-query="How do I create and manage Contacts using GoHighLevel API?">
+                            <div class="card-icon">👥</div>
+                            <div class="card-title">Contacts API & Management</div>
+                            <div class="card-desc">Learn how to search, create, and update contacts via API or workflows.</div>
+                        </div>
+                        <div class="card-item" data-query="Step-by-step guide to set up Opportunity Pipelines and Stage Triggers.">
+                            <div class="card-icon">📊</div>
+                            <div class="card-title">Pipelines & Opportunities</div>
+                            <div class="card-desc">Automate sales pipelines with opportunity status changes.</div>
+                        </div>
+                        <div class="card-item" data-query="How to configure Custom Domains and SSL certificates in GHL Funnels?">
+                            <div class="card-icon">🌐</div>
+                            <div class="card-title">Funnels & Custom Domains</div>
+                            <div class="card-desc">Domain mapping, DNS CNAME setups, and SSL troubleshooting.</div>
+                        </div>
+                        <div class="card-item" data-query="What are native GHL features vs 3rd party Zapier/Make workarounds?">
+                            <div class="card-icon">🔌</div>
+                            <div class="card-title">Native vs Workarounds</div>
+                            <div class="card-desc">Find out if a feature is natively supported or requires external tools.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages List Container -->
+                <div class="messages-list" id="messages-list"></div>
+            </div>
+
+            <!-- Thinking / Loading Bar -->
+            <div class="loading-bar-container hidden" id="loading-indicator">
+                <div class="loading-pill">
+                    <div class="sparkle-icon">✨</div>
+                    <span>Synthesizing answer with Gemini...</span>
+                    <div class="dots-loader">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input Pill Area -->
+            <div class="input-area">
+                <div class="input-box-wrapper" id="input-box-wrapper">
+                    <!-- Multimodal Drop / Paste Overlay Preview -->
+                    <div class="attachments-preview-tray hidden" id="attachments-preview-tray"></div>
+
+                    <!-- ChatGPT-style Quoted Excerpt Reply Preview -->
+                    <div class="quote-reply-preview hidden" id="quote-reply-preview">
+                        <div class="quote-reply-content">
+                            <div class="quote-reply-header">
+                                <span class="quote-icon">💬</span>
+                                <span class="quote-label">Replying to excerpt:</span>
+                            </div>
+                            <div class="quote-reply-text" id="quote-reply-text"></div>
+                        </div>
+                        <button class="quote-cancel-btn" id="quote-cancel-btn" type="button" title="Cancel quote reply">✕</button>
+                    </div>
+
+                    <!-- Voice Recording Active Bar -->
+                    <div class="voice-recording-bar hidden" id="voice-recording-bar">
+                        <div class="recording-live-indicator">
+                            <span class="recording-red-dot"></span>
+                            <span class="recording-text">Recording Audio...</span>
+                        </div>
+                        <div class="recording-wave-visualizer">
+                            <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <span class="recording-timer" id="recording-timer">0:00</span>
+                        <div class="recording-actions">
+                            <button type="button" class="icon-action-btn cancel-record-btn" id="cancel-record-btn" title="Cancel recording">✕</button>
+                            <button type="button" class="icon-action-btn send-record-btn" id="send-record-btn" title="Done & Attach voice note">✓</button>
+                        </div>
+                    </div>
+
+                    <!-- Regular Chat Controls Bar -->
+                    <div class="input-controls-row" id="input-controls-row">
+                        <!-- Attachment Trigger Button -->
+                        <button type="button" class="attach-btn" id="attach-btn" title="Attach image, document, or audio (or paste screenshot)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                        </button>
+                        <input type="file" id="file-upload-input" class="hidden-file-input" multiple accept="image/*,application/pdf,text/*,.doc,.docx,.csv,.json,.md,.wav,.mp3,.webm,.ogg,.m4a">
+
+                        <textarea 
+                            id="user-input" 
+                            class="chat-textarea" 
+                            placeholder="Message XortLogix High Level Assistant..." 
+                            rows="1"
+                        ></textarea>
+
+                        <div class="input-right-buttons">
+                            <!-- Voice Input Button -->
+                            <button type="button" class="voice-btn" id="voice-record-btn" title="Record voice question">
+                                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+                            </button>
+
+                            <!-- Send Button -->
+                            <button id="send-btn" class="send-btn" title="Send Message" aria-label="Send message" disabled>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="input-footer-note">
+                    XortLogix High Level Assistant is an AI and AI can make mistakes
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Unified User Profile & Preferences Modal -->
+    <div class="modal-overlay hidden" id="profile-modal">
+        <div class="modal-box profile-modal-box">
+            <div class="modal-header">
+                <div class="modal-header-title-group">
+                    <div class="profile-header-avatar" id="modal-avatar-initials">U</div>
+                    <div>
+                        <h3 id="modal-profile-title">Profile & Settings</h3>
+                        <p class="modal-header-subtitle" id="modal-profile-subtitle">Personalize your identity and account security</p>
+                    </div>
+                </div>
+                <button class="icon-btn modal-close-btn" id="close-profile-modal" title="Close">✕</button>
+            </div>
+            
+            <!-- Modal Navigation Tabs -->
+            <div class="modal-nav-tabs">
+                <button class="modal-tab-btn active" data-tab="tab-identity">
+                    <span>👤</span> Personal Info
+                </button>
+                <button class="modal-tab-btn" data-tab="tab-security">
+                    <span>🔒</span> Password & Security
+                </button>
+            </div>
+
+            <div class="modal-body profile-modal-body">
+                <!-- Feedback Alerts -->
+                <div class="auth-feedback danger-feedback hidden" id="profile-error-alert"></div>
+                <div class="auth-feedback success-feedback hidden" id="profile-success-alert"></div>
+
+                <!-- Tab 1: Personal Info -->
+                <div class="tab-pane active" id="tab-identity">
+                    <div class="form-group">
+                        <label for="edit-user-name">Your Full Name</label>
+                        <input type="text" id="edit-user-name" placeholder="e.g. Muhammad Okasha" autocomplete="name">
+                        <small class="help-text">Your name will be used across greeting replies and profile displays.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-user-email">Email Address (Read-Only)</label>
+                        <input type="email" id="edit-user-email" disabled readonly class="disabled-input">
+                        <small class="help-text">Assigned employee email address.</small>
+                    </div>
+                    <div class="tab-actions-right">
+                        <button class="primary-btn" id="save-name-btn">
+                            <span class="btn-text">Save Profile</span>
+                            <div class="btn-spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Password & Security -->
+                <div class="tab-pane hidden" id="tab-security">
+                    <div class="form-group">
+                        <label for="old-pwd-input">Current Password</label>
+                        <input type="password" id="old-pwd-input" placeholder="••••••••" autocomplete="current-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-pwd-input">New Password</label>
+                        <input type="password" id="new-pwd-input" placeholder="Min 6 characters" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-pwd-input">Confirm New Password</label>
+                        <input type="password" id="confirm-pwd-input" placeholder="Re-type new password" autocomplete="new-password">
+                    </div>
+                    <div class="tab-actions-right">
+                        <button class="primary-btn" id="save-pwd-btn">
+                            <span class="btn-text">Update Password</span>
+                            <div class="btn-spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Conversation Modal -->
+    <div class="modal-overlay hidden" id="rename-modal">
+        <div class="modal-box small-modal">
+            <div class="modal-header">
+                <h3>✏️ Rename Conversation</h3>
+                <button class="icon-btn modal-close-btn" id="close-rename-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="rename-input">New Conversation Title</label>
+                    <input type="text" id="rename-input" placeholder="Enter conversation title...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn" id="cancel-rename">Cancel</button>
+                <button class="primary-btn" id="save-rename">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay hidden" id="delete-modal">
+        <div class="modal-box small-modal">
+            <div class="modal-header">
+                <h3>🗑️ Delete Conversation</h3>
+                <button class="icon-btn modal-close-btn" id="close-delete-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn" id="cancel-delete">Cancel</button>
+                <button class="danger-btn" id="confirm-delete">Delete Permanent</button>
+            </div>
+    <!-- Drag and Drop Fullscreen Dropzone Overlay -->
+    <div class="drag-drop-overlay hidden" id="drag-drop-overlay">
+        <div class="drag-drop-box">
+            <div class="drag-drop-icon">📁</div>
+            <h3>Drop files here</h3>
+            <p>Upload images, PDFs, documents, or audio clips to analyze with AI</p>
+        </div>
+    </div>
+
+    <!-- Floating ChatGPT-style Selection Reply Tooltip -->
+    <div class="selection-reply-tooltip hidden" id="selection-reply-tooltip">
+        <button class="selection-reply-btn" id="selection-reply-btn" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 17 4 12 9 7"></polyline>
+                <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
+            </svg>
+            <span>Ask about this</span>
+        </button>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div class="lightbox-overlay hidden" id="image-lightbox-modal">
+        <button class="lightbox-close-btn" id="lightbox-close-btn" title="Close">✕</button>
+        <img src="" id="lightbox-image" class="lightbox-image" alt="Full Preview">
+    </div>
+
+    <!-- External JS Libraries -->
+    <!-- Marked JS for Markdown Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <!-- Highlight.js for Syntax Highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Custom Application JS -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

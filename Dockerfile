@@ -1,28 +1,24 @@
 FROM python:3.10-slim
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PORT=7860
+# Create user with UID 1000 (Hugging Face default)
+RUN useradd -m -u 1000 user
+USER user
+ENV PATH="/home/user/.local/bin:$PATH"
 
 WORKDIR /app
 
-# Install system build dependencies and curl
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install python dependencies
-COPY ["requirements.txt", "/app/requirements.txt"]
+# Install lightweight dependencies (FastEmbed ONNX - ultra low memory)
+COPY --chown=user ./requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 
-# Pre-cache FastEmbed nomic embedding model inside Docker image (optional cache)
+# Pre-cache nomic embedding model inside Docker image for instant queries
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='nomic-ai/nomic-embed-text-v1.5')" || true
 
-# Copy all GHL RAG application files into /app
-COPY ["XortLogix High Level/", "/app/"]
-COPY ["start.py", "/app/start.py"]
+# Copy application files
+COPY --chown=user . /app
 
+# Expose port 7860 (Hugging Face default)
 EXPOSE 7860
 
-CMD ["python", "start.py"]
+# Start FastAPI application with dynamic port fallback
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}"]

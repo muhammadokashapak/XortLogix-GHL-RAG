@@ -6,8 +6,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Check if app.py is directly here or inside 'GHL RAG'
 if os.path.exists(os.path.join(BASE_DIR, "app.py")):
     sys.path.insert(0, BASE_DIR)
-elif os.path.exists(os.path.join(BASE_DIR, "XortLogix High Level", "app.py")):
-    ghl_path = os.path.join(BASE_DIR, "XortLogix High Level")
+elif os.path.exists(os.path.join(BASE_DIR, "GHL RAG", "app.py")):
+    ghl_path = os.path.join(BASE_DIR, "GHL RAG")
     os.chdir(ghl_path)
     sys.path.insert(0, ghl_path)
 

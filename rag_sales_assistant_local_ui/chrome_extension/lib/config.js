@@ -1,7 +1,0 @@
-const CONFIG = {
-  BACKEND_URL: 'http://127.0.0.1:8000',
-  WS_URL: 'ws://127.0.0.1:8000/ws',
-  PING_INTERVAL: 5000,
-  DEBOUNCE_MS: 1500,
-  MIN_QUERY_LENGTH: 3
-};
