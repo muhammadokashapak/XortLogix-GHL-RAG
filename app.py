@@ -9,20 +9,23 @@ except ImportError:
     pass
 
 import asyncio
+import threading
 import json
 import time
 import base64
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Request, Response, Depends, Cookie, Header, APIRouter
+from fastapi import FastAPI, HTTPException, Request, Response, Depends, Cookie, Header, APIRouter, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 SentenceTransformer = None
 from dotenv import load_dotenv
+import hashlib
 
 import db
 from rag_engine import RAGEngine, QueryUnderstandingEngine, clean_latex_artifacts
+from universal_file_reader import extract_file_content
 
 # Fix Windows console UTF-8 output encoding
 if sys.platform == "win32":
@@ -50,24 +53,125 @@ if IS_VERCEL:
 else:
     LOCAL_DB_PATH = os.path.join(BASE_DIR, "ghl_chroma_db")
 
-DEFAULT_GEMINI_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+class GeminiKeyPool:
+    """
+    Intelligent Multi-Key Polling & Automatic Failover Engine.
+    - Rotates keys round-robin (polling) to distribute token consumption across all keys.
+    - Detects 429 (ResourceExhausted / RateLimit), 503 spikes, or quota exhaustion.
+    - Temporarily puts exhausted key into cooldown and immediately shifts to the next healthy key.
+    - Automatically recovers keys when cooldown period ends.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.index = 0
+        self.keys = []
+        self.key_stats = {}
+        self.reload_keys()
+
+    def reload_keys(self):
+        with self.lock:
+            all_keys = []
+            # Read from environment
+            env_keys_str = os.getenv("GEMINI_API_KEYS", "") or os.getenv("GEMINI_API_KEY", "")
+            if env_keys_str:
+                for k in env_keys_str.replace(";", ",").split(","):
+                    k = k.strip()
+                    if k and k != "YOUR_GEMINI_API_KEY_HERE" and k not in all_keys:
+                        all_keys.append(k)
+
+            # Read from .env
+            if os.path.exists(ENV_PATH):
+                try:
+                    with open(ENV_PATH, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("#"):
+                                continue
+                            if line.startswith("GEMINI_API_KEYS=") or line.startswith("GEMINI_API_KEY="):
+                                val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                                for k in val.replace(";", ",").split(","):
+                                    k = k.strip()
+                                    if k and k != "YOUR_GEMINI_API_KEY_HERE" and k not in all_keys:
+                                        all_keys.append(k)
+                except Exception:
+                    pass
+
+            self.keys = all_keys
+            for k in self.keys:
+                if k not in self.key_stats:
+                    self.key_stats[k] = {
+                        "requests": 0,
+                        "errors": 0,
+                        "tokens_estimated": 0,
+                        "cooldown_until": 0,
+                        "status": "active"
+                    }
+
+    def get_candidate_keys(self, override_key: str = "") -> list:
+        with self.lock:
+            if not self.keys:
+                self.reload_keys()
+
+            now = time.time()
+            if override_key and override_key != "YOUR_GEMINI_API_KEY_HERE":
+                return [override_key] + [k for k in self.keys if k != override_key]
+
+            if not self.keys:
+                return []
+
+            n = len(self.keys)
+            start_idx = self.index
+            self.index = (self.index + 1) % n
+
+            ordered = [self.keys[(start_idx + i) % n] for i in range(n)]
+            active = [k for k in ordered if self.key_stats.get(k, {}).get("cooldown_until", 0) <= now]
+            in_cooldown = [k for k in ordered if self.key_stats.get(k, {}).get("cooldown_until", 0) > now]
+            in_cooldown.sort(key=lambda k: self.key_stats.get(k, {}).get("cooldown_until", 0))
+
+            return active + in_cooldown
+
+    def mark_rate_limited(self, key: str, cooldown_seconds: float = 60.0):
+        with self.lock:
+            if key in self.key_stats:
+                self.key_stats[key]["cooldown_until"] = time.time() + cooldown_seconds
+                self.key_stats[key]["errors"] += 1
+                self.key_stats[key]["status"] = "cooldown"
+                print(f"🔄 [Key Pool] Key {key[:12]}... hit limit. Shifted to cooldown ({cooldown_seconds}s). Next key will take over.")
+
+    def record_success(self, key: str, approx_tokens: int = 500):
+        with self.lock:
+            if key in self.key_stats:
+                st = self.key_stats[key]
+                st["requests"] += 1
+                st["tokens_estimated"] += approx_tokens
+                if st["tokens_estimated"] >= 35000:
+                    st["cooldown_until"] = time.time() + 25
+                    st["tokens_estimated"] = 0
+                    print(f"🔄 [Key Pool] Key {key[:12]}... high token volume. Shifting to other pool keys for 25s.")
+
+    def get_pool_status(self) -> dict:
+        with self.lock:
+            now = time.time()
+            return {
+                "total_keys": len(self.keys),
+                "keys": [
+                    {
+                        "index": idx + 1,
+                        "key_mask": f"{k[:10]}...{k[-5:]}",
+                        "requests": self.key_stats.get(k, {}).get("requests", 0),
+                        "errors": self.key_stats.get(k, {}).get("errors", 0),
+                        "status": "cooling_down" if self.key_stats.get(k, {}).get("cooldown_until", 0) > now else "active",
+                        "cooldown_remaining_seconds": max(0, int(self.key_stats.get(k, {}).get("cooldown_until", 0) - now))
+                    }
+                    for idx, k in enumerate(self.keys)
+                ]
+            }
+
+gemini_key_pool = GeminiKeyPool()
 
 def get_default_api_key() -> str:
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not key or key == "YOUR_GEMINI_API_KEY_HERE":
-        if os.path.exists(ENV_PATH):
-            try:
-                with open(ENV_PATH, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("GEMINI_API_KEY="):
-                            k = line.split("=", 1)[1].strip()
-                            if k:
-                                return k
-            except Exception:
-                pass
-        return DEFAULT_GEMINI_KEY
-    return key
+    candidates = gemini_key_pool.get_candidate_keys()
+    return candidates[0] if candidates else ""
 
 # Initialize FastAPI App
 app = FastAPI(
@@ -259,6 +363,7 @@ class ChatRequest(BaseModel):
     top_k: Optional[int] = 1
     api_key: Optional[str] = None
     attachments: Optional[List[AttachmentItem]] = []
+    selected_model: Optional[str] = "gemini-3.6-flash"
 
 class ChatResponse(BaseModel):
     answer: str
@@ -267,7 +372,7 @@ class ChatResponse(BaseModel):
     top_k: int
     conversation_id: str
     conversation_title: str
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.6-flash"
 
 class KeyValidateRequest(BaseModel):
     api_key: str
@@ -482,15 +587,14 @@ async def chat_rag_endpoint(request: ChatRequest, user: dict = Depends(get_curre
     user_msg_record = db.add_message(conv_id, user['id'], 'user', user_query, attachments=att_save_data)
     current_conv_title = user_msg_record['conversation_title']
 
-    # 3. Resolve API Key (Always prioritize server .env key)
-    default_key = get_default_api_key()
+    # 3. Resolve API Keys from Polling Pool (Prioritize request key from user settings if provided)
     req_key = (request.api_key or "").strip()
-    api_key = default_key if default_key else req_key
-
-    if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
+    candidate_keys = gemini_key_pool.get_candidate_keys(override_key=req_key)
+    
+    if not candidate_keys:
         raise HTTPException(
             status_code=401, 
-            detail="Gemini API Key is missing. Please configure your API key in Settings or set GEMINI_API_KEY in environment."
+            detail="Gemini API Key is not configured on server. Please set GEMINI_API_KEYS in the server .env file."
         )
     
     start_time = time.time()
@@ -553,7 +657,7 @@ async def chat_rag_endpoint(request: ChatRequest, user: dict = Depends(get_curre
         yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'conversation_title': current_conv_title})}\n\n"
 
         try:
-            # 1. Parse and prepare Multimodal Gemini Parts
+            # 1. Parse and extract text / multimodal parts from ANY file type
             gemini_parts = []
             extracted_doc_text = ""
 
@@ -563,41 +667,22 @@ async def chat_rag_endpoint(request: ChatRequest, user: dict = Depends(get_curre
                     if ";base64," in raw_b64:
                         raw_b64 = raw_b64.split(";base64,")[1]
                     raw_bytes = base64.b64decode(raw_b64)
-                    m_type = att.mime_type.lower() if att.mime_type else "application/octet-stream"
 
-                    # Normalize common audio/video types
-                    if m_type == "audio/x-m4a" or att.name.endswith(".m4a"):
-                        m_type = "audio/mp4"
-                    elif m_type == "audio/mp3":
-                        m_type = "audio/mpeg"
+                    # Universal extraction for ANY file type: PDF, Word, Excel, PPTX, Code, Text, ZIP, Audio, Video, Image, etc.
+                    file_info = extract_file_content(att.name, raw_bytes, att.mime_type)
+                    m_type = file_info["mime_type"]
 
-                    # Extract plain text from text documents for RAG context
-                    if m_type.startswith("text/") or att.name.endswith(('.txt', '.csv', '.json', '.md', '.log', '.xml', '.html', '.js', '.py')):
+                    # Append extracted textual/tabular/structural content to prompt
+                    if file_info["text"]:
+                        extracted_doc_text += f"\n\n--- [Attached Document: {att.name} ({file_info['file_type'].upper()})] ---\n{file_info['text'][:30000]}\n--- [End of {att.name}] ---\n"
+
+                    # If multimodal (image, audio, video, pdf), pass raw bytes to Gemini API Part
+                    if file_info["is_multimodal"] or m_type.startswith(("image/", "audio/", "video/", "application/pdf")):
                         try:
-                            decoded_txt = raw_bytes.decode('utf-8', errors='replace')
-                            extracted_doc_text += f"\n\n--- [Attached File Content: {att.name}] ---\n{decoded_txt[:15000]}\n--- [End of {att.name}] ---\n"
-                        except Exception:
-                            pass
-
-                    # Extract text from PDF files using pypdf
-                    if m_type == "application/pdf" or att.name.endswith(".pdf"):
-                        m_type = "application/pdf"
-                        try:
-                            import pypdf
-                            import io
-                            pdf_reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
-                            pdf_text = ""
-                            for page in pdf_reader.pages:
-                                page_txt = page.extract_text()
-                                if page_txt:
-                                    pdf_text += page_txt + "\n"
-                            if pdf_text:
-                                extracted_doc_text += f"\n\n--- [Extracted PDF Document Content: {att.name}] ---\n{pdf_text[:20000]}\n--- [End of {att.name}] ---\n"
-                        except Exception as e_pdf:
-                            print(f"ℹ️ PDF text extraction fallback note: {e_pdf}")
-
-                    part = types.Part.from_bytes(data=raw_bytes, mime_type=m_type)
-                    gemini_parts.append(part)
+                            part = types.Part.from_bytes(data=raw_bytes, mime_type=m_type)
+                            gemini_parts.append(part)
+                        except Exception as e_part:
+                            print(f"ℹ️ Gemini multimodal part note ({att.name}): {e_part}")
                 except Exception as e_att:
                     print(f"⚠️ Error preparing attachment {att.name}: {e_att}")
 
@@ -636,62 +721,139 @@ async def chat_rag_endpoint(request: ChatRequest, user: dict = Depends(get_curre
             # Assemble contents for Gemini (Prompt Text + Multimodal Parts)
             contents_payload = [types.Part.from_text(text=final_prompt_text)] + gemini_parts
 
-            client_gemini = genai.Client(api_key=api_key)
-            fallback_models = [
-                "gemini-3.6-flash",
-                "gemini-flash-latest",
-                "gemini-flash-lite-latest",
-                "gemini-3.5-flash"
-            ]
-
+            # Multi-Key Polling & Automatic Failover Engine
             full_text = ""
             used_model = "gemini-3.6-flash"
             stream_success = False
+            last_error = ""
 
             gen_config = types.GenerateContentConfig(
                 temperature=0.2,
                 top_p=0.95
             )
 
-            for mod_name in fallback_models:
-                try:
-                    response_stream = client_gemini.models.generate_content_stream(
-                        model=mod_name,
-                        contents=contents_payload,
-                        config=gen_config
-                    )
-                    used_model = mod_name
-                    for chunk in response_stream:
-                        if chunk and chunk.text:
-                            full_text += chunk.text
-                            yield f"data: {json.dumps({'type': 'chunk', 'text': chunk.text})}\n\n"
-                    
-                    if full_text:
-                        stream_success = True
-                        break
-                except Exception as e_stream:
-                    print(f"ℹ️ Stream model {mod_name} error: {e_stream}, trying next fallback...")
-                    full_text = ""
+            pref_model = (getattr(request, 'selected_model', 'gemini-3.6-flash') or 'gemini-3.6-flash').strip()
 
-            # Fallback to non-streaming if stream didn't yield text
-            if not stream_success:
-                for mod_name in fallback_models:
-                    try:
-                        resp = client_gemini.models.generate_content(
-                            model=mod_name,
-                            contents=contents_payload,
-                        )
-                        if resp and resp.text:
-                            full_text = resp.text
+            # Iterate through candidate keys in polling order
+            for key_idx, current_key in enumerate(candidate_keys):
+                try:
+                    client_gemini = genai.Client(api_key=current_key)
+                    
+                    # Discover models or use modern flash tier (ordered by stability and current availability)
+                    fallback_models = [
+                        "gemini-3.6-flash",
+                        "gemini-3.7-flash",
+                        "gemini-3.5-flash-lite",
+                        "gemini-flash-latest",
+                        "gemini-3.5-flash",
+                        "gemini-flash-lite-latest",
+                        "gemini-pro-latest"
+                    ]
+                    if pref_model and pref_model != "auto":
+                        if pref_model in fallback_models:
+                            fallback_models.remove(pref_model)
+                        fallback_models.insert(0, pref_model)
+
+                    fallback_models = list(dict.fromkeys(fallback_models))
+                    key_exhausted = False
+
+                    for mod_name in fallback_models:
+                        try:
+                            response_stream = client_gemini.models.generate_content_stream(
+                                model=mod_name,
+                                contents=contents_payload,
+                                config=gen_config
+                            )
                             used_model = mod_name
-                            yield f"data: {json.dumps({'type': 'chunk', 'text': full_text})}\n\n"
-                            stream_success = True
-                            break
-                    except Exception as e_gen:
-                        print(f"ℹ️ Generate content error on {mod_name}: {e_gen}")
+                            chunk_received = False
+                            for chunk in response_stream:
+                                if chunk and chunk.text:
+                                    chunk_received = True
+                                    full_text += chunk.text
+                                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk.text})}\n\n"
+                            
+                            if full_text:
+                                stream_success = True
+                                gemini_key_pool.record_success(current_key, approx_tokens=len(full_text) // 3)
+                                break
+                        except Exception as e_stream:
+                            last_error = str(e_stream)
+                            err_low = last_error.lower()
+
+                            # 1. Temporary model capacity overload (503 / spikes in demand / high demand)
+                            # CRITICAL: This is a MODEL issue, NOT a key issue! DO NOT break key, try next model!
+                            if any(term in err_low for term in ["503", "spikes in demand", "high demand", "unavailable"]):
+                                print(f"⚠️ [Model Spike] Model {mod_name} returned 503 high demand. Auto-falling back to next model on same key...")
+                                full_text = ""
+                                continue
+
+                            # 2. Genuine Key Quota Exhaustion (429 / resource_exhausted / quota)
+                            elif any(term in err_low for term in ["429", "resource_exhausted", "quota", "rate_limit"]):
+                                gemini_key_pool.mark_rate_limited(current_key, cooldown_seconds=60)
+                                key_exhausted = True
+                                print(f"⚠️ [Key Pool] Key {current_key[:12]}... quota-limited on {mod_name}. Shifting immediately to next pool key...")
+                                break
+
+                            # 3. Model not found or deprecated (404)
+                            elif any(term in err_low for term in ["404", "not_found"]):
+                                print(f"ℹ️ Model {mod_name} not available (404), trying next model in tier...")
+                                full_text = ""
+                                continue
+
+                            else:
+                                print(f"ℹ️ Model {mod_name} error: {e_stream}, trying next model in tier...")
+                                full_text = ""
+                                continue
+
+                    if stream_success:
+                        break
+
+                    # Fallback non-streaming attempt on current key if not quota-limited
+                    if not key_exhausted and not stream_success:
+                        for mod_name in fallback_models:
+                            try:
+                                resp = client_gemini.models.generate_content(
+                                    model=mod_name,
+                                    contents=contents_payload,
+                                    config=gen_config
+                                )
+                                if resp and resp.text:
+                                    full_text = resp.text
+                                    used_model = mod_name
+                                    yield f"data: {json.dumps({'type': 'chunk', 'text': full_text})}\n\n"
+                                    stream_success = True
+                                    gemini_key_pool.record_success(current_key, approx_tokens=len(full_text) // 3)
+                                    break
+                            except Exception as e_gen:
+                                last_error = str(e_gen)
+                                err_low = last_error.lower()
+                                if any(term in err_low for term in ["503", "spikes in demand", "high demand", "unavailable", "404", "not_found"]):
+                                    continue
+                                elif any(term in err_low for term in ["429", "resource_exhausted", "quota", "rate_limit"]):
+                                    gemini_key_pool.mark_rate_limited(current_key, cooldown_seconds=60)
+                                    break
+                                else:
+                                    continue
+
+                    if stream_success:
+                        break
+
+                except Exception as e_client:
+                    last_error = str(e_client)
+                    if any(term in last_error.lower() for term in ["429", "quota", "resource_exhausted"]):
+                        gemini_key_pool.mark_rate_limited(current_key, cooldown_seconds=60)
 
             if not stream_success or not full_text:
-                error_msg = "⚠️ I was unable to reach the AI model service. Please check your Gemini API key in Settings or try again in a few moments."
+                err_detail = f" Details: `{last_error}`" if last_error else ""
+                
+                if "503" in last_error or "high demand" in last_error.lower() or "spikes in demand" in last_error.lower():
+                    help_text = "\n\n💡 Google Gemini is currently experiencing temporary high server traffic. Automatic failover has been enabled. Please submit your prompt again."
+                elif "404" in last_error or "NOT_FOUND" in last_error:
+                    help_text = "\n\n💡 **Diagnosis**: Model access unavailable. Falling back to active key pool."
+                else:
+                    help_text = "\n\nPlease verify that your Gemini API keys in .env are active."
+
+                error_msg = f"⚠️ I was unable to complete the request with the available API keys.{err_detail}{help_text}"
                 yield f"data: {json.dumps({'type': 'chunk', 'text': error_msg})}\n\n"
                 db.add_message(conv_id, user['id'], 'assistant', error_msg, sources=[])
                 yield f"data: {json.dumps({'type': 'done', 'model': 'error-fallback', 'elapsed_ms': 0, 'conversation_id': conv_id, 'conversation_title': current_conv_title})}\n\n"
@@ -726,6 +888,106 @@ async def validate_api_key(req: KeyValidateRequest):
         return {"valid": True, "message": "API key validated successfully."}
     except Exception as e:
         return {"valid": False, "message": str(e)}
+
+@api_router.get("/key-pool/status")
+async def get_key_pool_status():
+    """
+    Returns current health, request distribution, and cooldown status across all keys in the pool.
+    """
+    return gemini_key_pool.get_pool_status()
+
+@api_router.post("/knowledge/upload")
+async def upload_knowledge_file(
+    file: UploadFile = File(...),
+    current_user: Optional[dict] = Depends(get_optional_user)
+):
+    """
+    Universal Knowledge Base File Ingestion:
+    Uploads ANY document type (PDF, Word DOCX, Excel XLSX/CSV, PowerPoint PPTX, Text, Code, etc.)
+    extracts all content, chunks semantically, and upserts embeddings into ChromaDB.
+    """
+    try:
+        content = await file.read()
+        extracted = extract_file_content(file.filename, content, file.content_type)
+        extracted_text = extracted.get("text", "")
+
+        if not extracted_text or len(extracted_text.strip()) < 30:
+            return JSONResponse(status_code=400, content={
+                "status": "error",
+                "message": f"Could not extract sufficient text from '{file.filename}'. Please ensure the file contains readable text or tabular data."
+            })
+
+        # Split into semantic word-bounded chunks
+        paragraphs = [p.strip() for p in extracted_text.split("\n\n") if p.strip()]
+        chunks = []
+        curr = []
+        curr_len = 0
+        for p in paragraphs:
+            w_count = len(p.split())
+            if curr_len + w_count <= 250:
+                curr.append(p)
+                curr_len += w_count
+            else:
+                if curr:
+                    chunks.append("\n\n".join(curr))
+                curr = [p]
+                curr_len = w_count
+        if curr:
+            chunks.append("\n\n".join(curr))
+
+        # Save copy into knowledge_uploads directory
+        uploads_dir = os.path.join(BASE_DIR, "knowledge_uploads")
+        os.makedirs(uploads_dir, exist_ok=True)
+        save_path = os.path.join(uploads_dir, file.filename)
+        with open(save_path, "wb") as f:
+            f.write(content)
+
+        # Upsert into ChromaDB
+        col = get_chroma_collection()
+        embed_model = get_embedding_model()
+
+        chunk_ids = []
+        chunk_docs = []
+        chunk_metas = []
+
+        for idx, chunk in enumerate(chunks):
+            c_id = hashlib.md5(f"{file.filename}_{idx}_{chunk[:40]}".encode('utf-8')).hexdigest()
+            chunk_ids.append(c_id)
+            chunk_docs.append(chunk)
+            chunk_metas.append({
+                "source": file.filename,
+                "title": f"{file.filename} (Part {idx+1})",
+                "file_type": extracted["file_type"],
+                "uploaded_by": current_user.get("email", "admin") if current_user else "admin",
+                "uploaded_at": str(time.time())
+            })
+
+        # Compute embeddings with nomic search_document prefix
+        if hasattr(embed_model, 'embed'):
+            embs = [e.tolist() if hasattr(e, 'tolist') else list(e) for e in embed_model.embed([f"search_document: {c}" for c in chunk_docs])]
+        elif hasattr(embed_model, 'encode'):
+            embs = embed_model.encode([f"search_document: {c}" for c in chunk_docs]).tolist()
+        else:
+            embs = None
+
+        if embs:
+            col.upsert(ids=chunk_ids, documents=chunk_docs, embeddings=embs, metadatas=chunk_metas)
+        else:
+            col.upsert(ids=chunk_ids, documents=chunk_docs, metadatas=chunk_metas)
+
+        total_chunks = col.count() if hasattr(col, 'count') else len(chunk_ids)
+
+        return {
+            "status": "success",
+            "message": f"Successfully indexed '{file.filename}' into the ChromaDB Knowledge Base!",
+            "filename": file.filename,
+            "file_type": extracted["file_type"],
+            "chunks_indexed": len(chunk_ids),
+            "total_db_chunks": total_chunks
+        }
+    except Exception as e:
+        print(f"❌ Knowledge upload error: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 # Mount APIRouter with and without /api prefix
 app.include_router(api_router, prefix="/api")

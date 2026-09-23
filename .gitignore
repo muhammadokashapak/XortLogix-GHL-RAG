@@ -26,3 +26,7 @@ Thumbs.db
 laravel_app/vendor/
 laravel_app/.env
 laravel_app/storage/*.key
+
+# Local Workspaces
+XortLogix High Level/
+check/

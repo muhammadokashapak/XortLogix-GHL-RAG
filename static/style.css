@@ -1,27 +1,30 @@
 /* ==========================================================================
-   GoHighLevel RAG Assistant - ChatGPT 1:1 Dark Theme & Responsive System
+   GoHighLevel RAG Assistant - Light Theme System
    ========================================================================== */
 
 :root {
-    --bg-main: #212121;
-    --bg-sidebar: #171717;
-    --bg-card: #2f2f2f;
-    --bg-card-hover: #383838;
-    --bg-input: #2f2f2f;
-    --bg-code: #171717;
+    --bg-main: #f8fafc;
+    --bg-sidebar: #ffffff;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f1f5f9;
+    --bg-input: #ffffff;
+    --bg-code: #f1f5f9;
+    --bg-header: rgba(255, 255, 255, 0.95);
+    --input-area-gradient: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.95) 30%, #f8fafc 100%);
+    --auth-bg: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
 
-    --text-primary: #ececec;
-    --text-secondary: #b4b4b4;
-    --text-muted: #8e8e8e;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
 
-    --border-color: #383838;
-    --border-subtle: #2a2a2a;
+    --border-color: #e2e8f0;
+    --border-subtle: #cbd5e1;
 
-    --accent-color: #10a37f;
-    --accent-hover: #1a7f64;
-    --accent-light: rgba(16, 163, 127, 0.15);
+    --accent-color: #0284c7;
+    --accent-hover: #0369a1;
+    --accent-light: rgba(2, 132, 199, 0.12);
 
-    --user-msg-bg: #2f2f2f;
+    --user-msg-bg: #f1f5f9;
     --bot-msg-bg: transparent;
 
     --radius-sm: 8px;
@@ -29,9 +32,9 @@
     --radius-lg: 20px;
     --radius-full: 9999px;
 
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+    --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.05);
+    --shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+    --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.12);
 
     --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-smooth: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
@@ -75,12 +78,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(15, 23, 42, 0.15);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(15, 23, 42, 0.28);
 }
 
 /* Utilities */
@@ -579,7 +582,7 @@ body {
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border-subtle);
-    background-color: rgba(33, 33, 33, 0.92);
+    background-color: var(--bg-header);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     z-index: 40;
@@ -617,6 +620,59 @@ body {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+}
+
+/* Model Selector Dropdown (Bottom Input Box Style) */
+.model-selector-container {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    background: transparent;
+    border-radius: 8px;
+    padding: 2px 4px;
+    transition: all var(--transition-fast);
+}
+
+.model-selector-container:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.model-selector-dropdown {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    outline: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 20px 4px 4px;
+    font-family: inherit;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    transition: color var(--transition-fast);
+}
+
+.model-selector-dropdown:hover {
+    color: var(--text-primary);
+}
+
+.model-selector-dropdown option {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    padding: 8px;
+}
+
+.dropdown-chevron {
+    position: absolute;
+    right: 4px;
+    pointer-events: none;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+}
+
+.model-selector-container:hover .dropdown-chevron {
+    color: var(--text-primary);
 }
 
 .header-action-btn {
@@ -834,6 +890,64 @@ body {
 .user-bubble-text {
     white-space: pre-wrap;
     word-break: break-word;
+    font-size: 14.5px;
+    line-height: 1.55;
+    position: relative;
+    transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Prompt Line Clamping (Top 4 lines preview like ChatGPT & Gemini) */
+.user-bubble-text.clamped {
+    max-height: 92px;
+    overflow: hidden;
+    position: relative;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+}
+
+.user-bubble-text.clamped::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 34px;
+    background: linear-gradient(180deg, rgba(241, 245, 249, 0) 0%, var(--user-msg-bg) 100%);
+    pointer-events: none;
+}
+
+/* Show More / Show Less Toggle Button */
+.user-prompt-toggle-btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    margin-top: 3px;
+    background: rgba(2, 132, 199, 0.08);
+    color: var(--accent-color);
+    border: 1px solid rgba(2, 132, 199, 0.22);
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    user-select: none;
+}
+
+.user-prompt-toggle-btn:hover {
+    background: rgba(2, 132, 199, 0.16);
+    color: var(--accent-hover);
+    border-color: var(--accent-color);
+}
+
+.user-prompt-toggle-btn svg {
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.user-prompt-toggle-btn.expanded svg {
+    transform: rotate(180deg);
 }
 
 /* User Message Bubble Attachments */
@@ -1392,7 +1506,7 @@ body {
     left: 0;
     right: 0;
     padding: 8px 16px max(14px, env(safe-area-inset-bottom, 14px)) 16px;
-    background: linear-gradient(180deg, rgba(33, 33, 33, 0) 0%, rgba(33, 33, 33, 0.88) 25%, rgba(33, 33, 33, 1) 100%);
+    background: var(--input-area-gradient);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     z-index: 50;
@@ -1727,12 +1841,26 @@ body {
     transform: scale(1.05);
 }
 
-/* Regular Input Controls Row */
+/* Regular Input Controls Row & Bottom Actions */
 .input-controls-row {
     display: flex;
-    align-items: flex-end;
-    gap: 8px;
+    flex-direction: column;
     width: 100%;
+}
+
+.input-actions-bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 6px;
+    padding-top: 2px;
+}
+
+.input-left-buttons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .hidden-file-input {
@@ -1740,8 +1868,8 @@ body {
 }
 
 .attach-btn, .voice-btn {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: transparent;
     border: none;
@@ -1752,7 +1880,6 @@ body {
     cursor: pointer;
     transition: all var(--transition-fast);
     flex-shrink: 0;
-    margin-bottom: 2px;
 }
 
 .attach-btn:hover, .voice-btn:hover {
@@ -1777,17 +1904,17 @@ body {
 }
 
 .chat-textarea {
-    flex: 1 1 0%;
-    min-width: 0;
+    width: 100%;
     background: transparent;
     border: none;
     outline: none;
     color: var(--text-primary);
-    font-size: 15.5px;
+    font-size: 15px;
     resize: none;
     max-height: 160px;
+    min-height: 44px;
     line-height: 1.45;
-    padding: 6px 0;
+    padding: 4px 2px 8px 2px;
 }
 
 .chat-textarea::placeholder {
@@ -1797,7 +1924,7 @@ body {
 .input-right-buttons {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
@@ -1805,8 +1932,8 @@ body {
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background-color: #e5e5e5;
-    color: #171717;
+    background-color: #0084ff;
+    color: #ffffff;
     border: none;
     display: flex;
     align-items: center;
@@ -1815,18 +1942,18 @@ body {
     transition: all var(--transition-fast);
     touch-action: manipulation;
     flex-shrink: 0;
-    margin-bottom: 2px;
 }
 
 .send-btn:disabled {
     background-color: #383a3d;
     color: #6d7178;
     cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .send-btn:not(:disabled):hover {
-    background-color: #ffffff;
-    transform: scale(1.05);
+    background-color: #0073e6;
+    transform: scale(1.04);
 }
 
 .send-btn:not(:disabled):active {
@@ -1940,8 +2067,24 @@ body {
 }
 
 /* ==========================================================================
-   AUTHENTICATION STYLES
-   ========================================================================== */
+/* Zero-Flicker Session Protection (Prevents flash of login page on browser reload) */
+html.has-session #auth-wrapper {
+    display: none !important;
+}
+html.has-session:not(.is-admin) #app-view {
+    display: flex !important;
+}
+html.has-session.is-admin #admin-view {
+    display: flex !important;
+}
+html.no-session #app-view,
+html.no-session #admin-view {
+    display: none !important;
+}
+html.no-session #auth-wrapper {
+    display: flex !important;
+}
+
 .auth-wrapper {
     display: flex;
     align-items: center;
@@ -1949,7 +2092,7 @@ body {
     height: 100%;
     height: 100dvh;
     width: 100vw;
-    background: radial-gradient(circle at 50% 20%, #292929 0%, #171717 100%);
+    background: var(--auth-bg);
     position: fixed;
     top: 0;
     left: 0;

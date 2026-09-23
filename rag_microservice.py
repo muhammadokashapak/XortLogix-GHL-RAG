@@ -71,7 +71,7 @@ class RAGSearchResponse(BaseModel):
     sources: List[str]
     query_time_ms: float
     top_k: int
-    model: str = "gemini-3.5-flash"
+    model: str = "gemini-2.0-flash"
 
 @app.get("/health")
 async def health_check():
@@ -80,7 +80,7 @@ async def health_check():
         "service": "python-rag-microservice",
         "chunks": 5379,
         "embedding_model": "nomic-embed-text-v1.5",
-        "llm_model": "gemini-3.5-flash"
+        "llm_model": "gemini-2.0-flash"
     }
 
 @app.post("/api/rag-search", response_model=RAGSearchResponse)
@@ -155,6 +155,12 @@ I am unable to answer queries outside the scope of GoHighLevel. Please feel free
 - If specific configuration is not present in context, state:
   "Information regarding this specific configuration is not available in the current GoHighLevel documentation."
 
+4. STRICT PROPOSAL GENERATION & FACTUAL ACCURACY RULES:
+- NEVER HALLUCINATE CANDIDATE EXPERIENCE: Never invent projects, years, portal numbers ("35+ portals"), metrics, client names, case studies, or portfolio items.
+- STRICT SOURCE SEPARATION: Always separate Verified Experience, Client Requirements, and Proposed Recommendations.
+- DO NOT GUESS MISSING INFORMATION: Use `[CANDIDATE INPUT REQUIRED]` for missing facts.
+- NO FAKE CONFIDENCE / EXAGGERATION: Ground all statements in verified source material.
+
 Context:
 {context_str}
 
@@ -162,11 +168,11 @@ User Query: {user_query}
 
 Answer:"""
 
-        # 3. Gemini Generation with primary model gemini-flash-latest
+        # 3. Gemini Generation with primary model gemini-3.6-flash
         client_gemini = genai.Client(api_key=api_key)
         try:
             response = client_gemini.models.generate_content(
-                model='gemini-flash-latest',
+                model='gemini-3.6-flash',
                 contents=prompt,
             )
             answer_text = response.text
@@ -180,7 +186,7 @@ Answer:"""
             sources=[],
             query_time_ms=elapsed_ms,
             top_k=top_k,
-            model="gemini-flash-latest"
+            model="gemini-2.0-flash"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

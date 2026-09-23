@@ -145,7 +145,66 @@ class QueryUnderstandingEngine:
                 is_complex=True
             )
 
-        # 4. Detect Job Postings, RFPs & Hiring Requirements
+        # 4. Detect Blog / Article Proofreading & GHL Feasibility Review
+        blog_signals = [
+            "proofread", "proof read", "proofreading", "review this blog", "review this article",
+            "check this blog", "check this article", "proofread this blog", "proofread this article",
+            "proofread my blog", "proofread my article", "review my blog", "review my article",
+            "blog post", "article review"
+        ]
+        is_blog = any(sig in cleaned_text for sig in blog_signals) or (
+            ("blog" in cleaned_text or "article" in cleaned_text) and 
+            any(w in cleaned_text for w in ["proofread", "review", "check", "accurate", "native", "customly", "custom", "possible"])
+        )
+
+        if is_blog:
+            entities = cls._extract_entities(raw_text)
+            expanded = [
+                f"{e} GoHighLevel native features capabilities" for e in entities[:2]
+            ] + ["GoHighLevel native features vs custom development", "GoHighLevel workflows and capabilities"]
+            return QueryAnalysis(
+                raw_query=raw_text,
+                cleaned_query=cleaned_text,
+                intent="blog_article_proofreading",
+                objective="Proofread the blog or article for technical accuracy, verify whether all mentioned features are possible natively in GoHighLevel or require custom development, correct terminology, and provide constructive feedback.",
+                core_entities=entities,
+                topics=["Blog Proofreading", "Technical Accuracy", "Native vs Custom Feasibility", "GHL Feature Verification"],
+                output_type="blog_proofreading_and_feasibility",
+                expanded_queries=expanded[:3],
+                is_conversational=False,
+                is_complex=True
+            )
+
+        # 5. Detect Direct Native vs Custom Feasibility Inquiry
+        native_signals = [
+            "is it possible natively", "possible natively", "natively possible", "natively in ghl",
+            "can ghl do this natively", "can gohighlevel do this natively", "native or custom",
+            "do it customly", "do this customly", "natively vs custom", "native vs custom",
+            "can this be done natively", "is this supported natively", "native feature or custom",
+            "kya ye natively possible hai", "natively ho sakta hai", "natively ho skta hai",
+            "natively support", "supported natively", "ghl native", "natively kar sakte", "natively ho sakta"
+        ]
+        is_native_check = any(sig in cleaned_text for sig in native_signals)
+
+        if is_native_check:
+            entities = cls._extract_entities(raw_text)
+            expanded = [
+                f"{e} GoHighLevel native feature capability" for e in entities[:2]
+            ] + ["GoHighLevel native features", "GoHighLevel custom code API limitations"]
+            return QueryAnalysis(
+                raw_query=raw_text,
+                cleaned_query=cleaned_text,
+                intent="native_feasibility_check",
+                objective="Evaluate and answer definitively whether the requested feature is possible natively in GoHighLevel, possible via a native workaround, or strictly requires custom development.",
+                core_entities=entities,
+                topics=["Native Feasibility", "Native vs Custom", "Workarounds", "Custom Development"],
+                output_type="native_feasibility_verdict",
+                expanded_queries=expanded[:3],
+                is_conversational=False,
+                is_complex=True
+            )
+
+        # 6. Detect Job Postings, RFPs & Hiring Requirements
         job_signals = [
             "growth & campaign specialist", "campaign specialist", "specialist",
             "we are looking for", "responsibilities", "what you will be responsible for",
@@ -515,7 +574,7 @@ class IntentAwarePromptBuilder:
     ) -> str:
         first_name = user_name.split()[0].capitalize() if user_name else "there"
 
-        base_header = f"""You are an elite XortLogix High Level Senior Technical Consultant & Frontend Architecture Specialist.
+        base_header = f"""You are a senior XortLogix High Level Technical Consultant & Solutions Architect.
 User's Name: {first_name}
 Is Opening Conversation: {is_first_message}
 User Detected Intent: {analysis.intent}
@@ -552,17 +611,82 @@ Provide an authoritative, copy-paste ready technical blueprint structured as fol
 - Testing and verification steps in the browser console.
 """
 
+        elif analysis.intent == "blog_article_proofreading":
+            intent_guidance = """
+MISSION & ADAPTIVE STRUCTURE FOR GOHIGHLEVEL BLOG & ARTICLE PROOFREADING:
+The user has provided a blog post, article, or content draft related to GoHighLevel (or requested proofreading for one).
+Your job is to proofread the content, verify its technical accuracy against GoHighLevel's actual architecture and features, and evaluate whether each capability mentioned is possible NATIVELY in GHL or requires CUSTOM development.
+
+Provide a thorough, well-structured review:
+
+### 1. 📝 Overall Proofreading & Accuracy Verdict
+- Summarize the quality, clarity, and technical correctness of the article.
+- Note any outdated information (e.g. referencing deprecated API v1, legacy Triggers/Campaigns instead of Workflows, or inaccurate limits).
+
+### 2. ⚖️ Native vs. Custom Feasibility Breakdown
+Examine every claim, feature, or workflow strategy mentioned in the article and clearly classify it:
+* 🟢 **Possible Natively in GHL:**
+  - Detail the native feature, trigger, action, or setting (e.g. Workflows, Form/Survey Builder, Membership, Calendars, Pipelines, LC Email/Phone).
+  - Note any specific native constraints or prerequisites (e.g. required sub-account settings).
+* 🟡 **Native Workaround (No Code):**
+  - If it's not a single 1-click feature, explain how it can be achieved natively without writing code (e.g. using If/Else branches, tags, custom fields, wait steps).
+* 🟠 **Requires Custom Development:**
+  - Clearly explain why native GoHighLevel cannot handle this out-of-the-box.
+  - Describe the exact custom technical approach needed (e.g. Custom Code workflow action, Webhooks, REST API v2, OAuth marketplace apps, or frontend Custom JS/CSS via MutationObserver).
+* 🔴 **Strictly Unsupported / Violates Platform Boundaries:**
+  - Highlight any claims that are technically impossible or violate GHL terms, carrier compliance (A2P 10DLC), or security limits.
+
+### 3. ✍️ Content & Terminology Corrections
+- Highlight specific sentences, grammatical issues, or confusing passages that need rewriting.
+- Standardize GHL terminology (e.g. "Sub-account" vs "child account", "Workflows" vs "Campaigns", "Location ID").
+
+### 4. 💡 Pro Suggestions to Enhance the Article
+- Suggest 2–3 actionable points, diagrams, or real-world tips that would make the article significantly more valuable and authoritative to readers.
+"""
+
+        elif analysis.intent == "native_feasibility_check":
+            intent_guidance = """
+MISSION & ADAPTIVE STRUCTURE FOR NATIVE VS. CUSTOM FEASIBILITY INQUIRY:
+The user is asking whether a specific feature, workflow, or business requirement is possible NATIVELY in GoHighLevel or requires CUSTOM development (e.g., "is it possible natively?", "kya ye natively possible hai?").
+
+Deliver a direct, definitive answer formatted clearly:
+
+### 1. 🎯 Direct Feasibility Verdict
+State the feasibility upfront immediately:
+- 🟢 **YES — 100% Natively Supported** (Out-of-the-box standard GHL feature)
+- 🟡 **YES — Via Native Workaround** (Possible natively using smart workflow logic / tags / custom fields without code)
+- 🟠 **NO — Requires Custom Development** (Native GHL cannot do this alone; requires API v2, Webhooks, Custom Code actions, or Custom JS/CSS)
+- 🔴 **NO — Not Supported in GoHighLevel** (Beyond platform capabilities or violates compliance)
+
+### 2. ⚙️ How to Implement Natively (If Native or Workaround)
+- State the exact navigation path: (e.g., Automations → Workflows → Add New Workflow).
+- Detail the exact triggers, actions, and conditions required.
+- Mention any native limitations or required GHL subscription tier.
+
+### 3. 🛠️ Custom Implementation Strategy (If Custom Development is Required)
+- Explain exactly what technical limitation exists natively.
+- Outline the technical solution:
+  * Backend API / Webhook (sending data to external service or Custom Code action in workflow).
+  * REST API v2 (with appropriate endpoints and scopes).
+  * Frontend injection (Custom JS / CSS with MutationObserver for UI changes).
+- Provide sample code or payload structure where helpful.
+
+### 4. 💡 Recommendation
+- Give practical advice on whether the native route or the custom route is best for long-term scalability and maintenance.
+"""
+
         elif analysis.intent == "job_posting_analysis":
             intent_guidance = """
-MISSION & ADAPTIVE STRUCTURE FOR JOB DESCRIPTION / RFP ANALYSIS:
-The user provided a detailed Job Posting / Growth Specialist Opportunity.
-Provide a comprehensive, executive-level breakdown:
-### 1. 🎯 What the Company Actually Needs
-### 2. ⚡ Core Technical & GoHighLevel Requirements
-### 3. 📊 Expected Deliverables & Measurable KPIs
-### 4. 🔍 Key Evaluation Criteria & Information Gaps
-### 5. 🏗️ Recommended Implementation Blueprint
-### 6. 💼 High-Impact Pitch & Application Strategy
+MISSION & ADAPTIVE STRUCTURE FOR JOB DESCRIPTION & PROPOSAL GENERATION:
+The user provided a Job Posting / Client Opportunity for GoHighLevel.
+Produce a professional, concise, client-facing job proposal (target 500-750 words) that demonstrates understanding, answers client questions directly, and presents a practical technical approach.
+
+Structure:
+- **Opening:** Briefly show understanding of the client's core goal (e.g. headless/decoupled SaaS or automated GHL system) and establish relevant experience.
+- **Relevant GHL Experience:** Highlight real, verified GHL projects (e.g. custom AI voice receptionist, API v2 integrations, webhooks, custom dashboards). Use placeholders like `[ADD ACTUAL PROJECT]` for any specific details to be supplied.
+- **Answers to Client Questions:** Answer every client question directly with concrete technical honesty (differentiating native GHL vs custom UI/API, practical tech recommendations like Next.js/Node/FastAPI/Postgres/Redis, and honest demo placeholders `[ADD PORTFOLIO LINK]`).
+- **Proposed Architecture:** Concise explanation of Frontend → Backend/API Layer → GoHighLevel.
+- **Closing:** Confident, collaborative sign-off offering to discuss workflows and technical milestones.
 """
 
         elif analysis.intent == "technical_troubleshooting":
@@ -605,7 +729,7 @@ Deliver a direct, crisp, and concise answer immediately without unnecessary boil
         else:
             intent_guidance = """
 MISSION FOR GENERAL TECHNICAL QUERY:
-Start with an executive status banner (🟢 Native Feature / 🟡 Custom Development Required / ℹ️ Technical Overview), then provide a clear, actionable guide synthesized from documentation.
+Start with a clear status banner (🟢 Native Feature / 🟡 Native Workaround / 🟠 Custom Development Required / ℹ️ Technical Overview). If the user asks whether something is possible natively, state the native vs custom feasibility upfront decisively. Then provide a clear, actionable guide synthesized from documentation.
 """
 
         rules = """
@@ -623,7 +747,19 @@ CORE CONSULTING & EXPERT PRINCIPLES:
    - For sequential navigation steps or workflow transitions (e.g. Funnels → Select Funnel → Settings), ALWAYS use clean unicode arrow '→' or '->' (NEVER \\rightarrow).
 4. GREETINGS & TONE:
    - First message: Greet politely by name ({first_name}).
-   - Subsequent messages: Direct, professional, and crisp answers.
+   - Subsequent messages: Direct, professional, and crisp answers. Avoid arrogant or hyperbolic language.
+5. PROPOSAL GENERATION & FACTUAL ACCURACY:
+   - NEVER HALLUCINATE CANDIDATE EXPERIENCE: Never invent candidate experience, project counts, portal numbers, metrics, or client names.
+   - Use clean placeholders such as `[ADD ACTUAL PROJECT]` or `[ADD PORTFOLIO LINK]` for unsupplied info.
+   - Do NOT include internal meta-commentary like `[CANDIDATE INPUT REQUIRED]` or `[STRICT SOURCE SEPARATION]`.
+6. NATIVE VS CUSTOM FEASIBILITY RESPONSES:
+   - When asked whether something is possible natively in GoHighLevel (e.g. "is it possible natively?", "kya ye natively possible hai?"), ALWAYS give a direct feasibility verdict upfront:
+     * 🟢 Natively Supported (out-of-the-box)
+     * 🟡 Native Workaround (achievable natively using workflow logic, tags, custom fields without code)
+     * 🟠 Requires Custom Development (needs REST API v2, Webhook, Custom Code workflow action, or Custom JS/CSS)
+     * 🔴 Unsupported (strictly outside GHL platform boundaries)
+   - Never be vague or leave the user guessing. Clearly explain the native steps if possible, or the exact technical method if custom development is required.
+   - If the user asks in Urdu / Roman Urdu (e.g. "kya ye natively possible hai", "us k hisaab se jawab de"), respond naturally in the user's conversational tone while maintaining full technical accuracy.
 """
 
         full_prompt = f"""{base_header}

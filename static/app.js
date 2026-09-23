@@ -22,6 +22,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Elements - App & Sidebar
     const appView = document.getElementById('app-view');
     const sidebar = document.getElementById('sidebar');
+    const modelSelector = document.getElementById('model-selector');
+    if (modelSelector) {
+        const savedModel = localStorage.getItem('selected_model');
+        const validOptions = Array.from(modelSelector.options).map(o => o.value);
+        if (savedModel && validOptions.includes(savedModel)) {
+            modelSelector.value = savedModel;
+        } else {
+            modelSelector.value = 'gemini-3.6-flash';
+            localStorage.setItem('selected_model', 'gemini-3.6-flash');
+        }
+        modelSelector.addEventListener('change', () => {
+            localStorage.setItem('selected_model', modelSelector.value);
+        });
+    }
     const sidebarOverlay = document.getElementById('sidebar-overlay');
     const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
     const sidebarOpenBtn = document.getElementById('sidebar-open-btn');
@@ -95,6 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const newPwdInput = document.getElementById('new-pwd-input');
     const confirmPwdInput = document.getElementById('confirm-pwd-input');
     const savePwdBtn = document.getElementById('save-pwd-btn');
+    const geminiApiKeyInput = document.getElementById('gemini-api-key-input');
+
 
     // Rename Modal
     const renameModal = document.getElementById('rename-modal');
@@ -190,7 +206,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     window.authFetch = authFetch;
 
-    // Initialize App Session
+    // Immediate Synchronous State Hydration (Eliminates login page flicker & keeps user permanently logged in on refresh)
+    const initialToken = localStorage.getItem('ghl_session_token');
+    let cachedUser = null;
+    try {
+        const rawUser = localStorage.getItem('ghl_user_data');
+        if (rawUser) cachedUser = JSON.parse(rawUser);
+    } catch(e) {}
+
+    if (initialToken) {
+        document.documentElement.classList.add('has-session');
+        document.documentElement.classList.remove('no-session');
+        if (cachedUser) {
+            currentUser = cachedUser;
+            const isAdmin = (currentUser.email === 'muhammad.okasha2146@gmail.com') || (localStorage.getItem('ghl_is_admin') === 'true');
+            if (isAdmin) {
+                document.documentElement.classList.add('is-admin');
+                localStorage.setItem('ghl_is_admin', 'true');
+            } else {
+                document.documentElement.classList.remove('is-admin');
+                localStorage.setItem('ghl_is_admin', 'false');
+            }
+            showAppView(false);
+        } else {
+            showAppView(false);
+        }
+    } else {
+        document.documentElement.classList.add('no-session');
+        document.documentElement.classList.remove('has-session', 'is-admin');
+        showAuthView();
+    }
+
+    // Initialize App Session in Background (Silently validates session with server)
     checkAuthSession();
     fetchSystemStatus();
 
@@ -198,46 +245,78 @@ document.addEventListener('DOMContentLoaded', () => {
     // AUTHENTICATION FLOW
     // ==========================================
     async function checkAuthSession() {
+        const token = localStorage.getItem('ghl_session_token');
+        if (!token) {
+            showAuthView();
+            return;
+        }
+
         try {
             const res = await authFetch('/api/auth/me');
             if (res.ok) {
                 const data = await res.json();
                 currentUser = data.user;
-                showAppView();
-            } else {
+                localStorage.setItem('ghl_user_data', JSON.stringify(data.user));
+                const isAdmin = (currentUser && currentUser.email === 'muhammad.okasha2146@gmail.com') || !!data.is_admin;
+                localStorage.setItem('ghl_is_admin', isAdmin ? 'true' : 'false');
+                if (isAdmin) {
+                    document.documentElement.classList.add('is-admin');
+                } else {
+                    document.documentElement.classList.remove('is-admin');
+                }
+                showAppView(true);
+            } else if (res.status === 401) {
+                // Server explicitly rejected the session (token expired or invalidated)
                 localStorage.removeItem('ghl_session_token');
+                localStorage.removeItem('ghl_user_data');
+                localStorage.removeItem('ghl_is_admin');
                 currentUser = null;
                 showAuthView();
             }
+            // If server returned 500 or temporary error, DO NOT log out!
         } catch (err) {
-            showAuthView();
+            // Network issue / refreshing while offline: preserve existing login state!
+            console.warn('Network issue checking session; keeping active login state:', err);
         }
     }
 
     function showAuthView() {
+        document.documentElement.classList.remove('has-session', 'is-admin');
+        document.documentElement.classList.add('no-session');
         authWrapper.classList.remove('hidden');
         appView.classList.add('hidden');
+        document.getElementById('admin-view').classList.add('hidden');
     }
 
-    function showAppView() {
+    function showAppView(shouldLoadData = true) {
+        document.documentElement.classList.add('has-session');
+        document.documentElement.classList.remove('no-session');
         authWrapper.classList.add('hidden');
-        if (currentUser && currentUser.email === 'muhammad.okasha2146@gmail.com') {
+
+        const isAdmin = (currentUser && currentUser.email === 'muhammad.okasha2146@gmail.com') || (localStorage.getItem('ghl_is_admin') === 'true');
+        if (isAdmin) {
+            document.documentElement.classList.add('is-admin');
             appView.classList.add('hidden');
             document.getElementById('admin-view').classList.remove('hidden');
-            loadAdminUsers();
+            if (shouldLoadData) {
+                loadAdminUsers();
+            }
         } else {
+            document.documentElement.classList.remove('is-admin');
             document.getElementById('admin-view').classList.add('hidden');
             appView.classList.remove('hidden');
             
             // Update User Profile Details
             if (currentUser) {
-                userDisplayName.textContent = currentUser.name;
-                userDisplayEmail.textContent = currentUser.email;
-                userAvatarInitials.textContent = currentUser.name.charAt(0).toUpperCase();
+                userDisplayName.textContent = currentUser.name || 'User';
+                userDisplayEmail.textContent = currentUser.email || '';
+                userAvatarInitials.textContent = (currentUser.name || 'U').charAt(0).toUpperCase();
             }
 
             // Fetch Conversations
-            loadConversations();
+            if (shouldLoadData) {
+                loadConversations();
+            }
         }
     }
 
@@ -290,8 +369,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.token) {
                     localStorage.setItem('ghl_session_token', data.token);
                 }
+                if (data.user) {
+                    localStorage.setItem('ghl_user_data', JSON.stringify(data.user));
+                    const isAdmin = (data.user.email === 'muhammad.okasha2146@gmail.com') || !!data.is_admin;
+                    localStorage.setItem('ghl_is_admin', isAdmin ? 'true' : 'false');
+                }
                 currentUser = data.user;
-                showAppView();
+                showAppView(true);
             }
         } catch (err) {
             setAuthLoading(loginSubmitBtn, false);
@@ -331,6 +415,9 @@ document.addEventListener('DOMContentLoaded', () => {
             await authFetch('/api/auth/logout', { method: 'POST' });
         } catch (e) {}
         localStorage.removeItem('ghl_session_token');
+        localStorage.removeItem('ghl_user_data');
+        localStorage.removeItem('ghl_is_admin');
+        localStorage.removeItem('ghl_active_conv_id');
         currentUser = null;
         currentConversationId = null;
         userAccountMenu.classList.add('hidden');
@@ -748,6 +835,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (oldPwdInput) oldPwdInput.value = '';
         if (newPwdInput) newPwdInput.value = '';
         if (confirmPwdInput) confirmPwdInput.value = '';
+
+        // Populate Gemini API Key
+        if (geminiApiKeyInput) {
+            geminiApiKeyInput.value = localStorage.getItem('gemini_api_key') || appSettings.apiKey || '';
+        }
         clearProfileAlerts();
 
         // Switch to initial tab
@@ -848,6 +940,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showProfileError(data.detail || 'Failed to update profile.');
                 } else {
                     currentUser.name = newName;
+                    localStorage.setItem('ghl_user_data', JSON.stringify(currentUser));
                     userDisplayName.textContent = newName;
                     const initial = newName.charAt(0).toUpperCase();
                     userAvatarInitials.textContent = initial;
@@ -911,6 +1004,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+
     function setBtnLoading(btn, isLoading) {
         if (!btn) return;
         const text = btn.querySelector('.btn-text');
@@ -961,6 +1055,10 @@ document.addEventListener('DOMContentLoaded', () => {
         stagedAttachments.forEach((att, index) => {
             const card = document.createElement('div');
             
+            const nameLower = (att.name || '').toLowerCase();
+            let icon = '📄';
+            let typeLabel = 'Document';
+
             if (att.type === 'image') {
                 card.className = 'attachment-preview-card image-card';
                 card.innerHTML = `
@@ -970,20 +1068,43 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (att.type === 'audio') {
                 card.className = 'attachment-preview-card';
                 card.innerHTML = `
-                    <span style="font-size:16px;">🎙️</span>
+                    <span style="font-size:18px;">🎙️</span>
                     <div class="attachment-card-info">
                         <span class="attachment-card-name">${escapeHtml(att.name)}</span>
-                        <span class="attachment-card-meta">Voice Audio (${formatFileSize(att.size)})</span>
+                        <span class="attachment-card-meta">Audio (${formatFileSize(att.size)})</span>
                     </div>
                     <button type="button" class="attachment-remove-btn" data-index="${index}" title="Remove audio">✕</button>
                 `;
             } else {
+                if (nameLower.endsWith('.pdf')) {
+                    icon = '📕';
+                    typeLabel = 'PDF Document';
+                } else if (nameLower.endsWith('.docx') || nameLower.endsWith('.doc')) {
+                    icon = '📘';
+                    typeLabel = 'Word Document';
+                } else if (nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls') || nameLower.endsWith('.csv')) {
+                    icon = '📊';
+                    typeLabel = 'Spreadsheet';
+                } else if (nameLower.endsWith('.pptx') || nameLower.endsWith('.ppt')) {
+                    icon = '📑';
+                    typeLabel = 'Presentation';
+                } else if (nameLower.endsWith('.zip') || nameLower.endsWith('.rar') || nameLower.endsWith('.7z') || nameLower.endsWith('.tar') || nameLower.endsWith('.gz')) {
+                    icon = '🗜️';
+                    typeLabel = 'Archive';
+                } else if (nameLower.endsWith('.py') || nameLower.endsWith('.js') || nameLower.endsWith('.ts') || nameLower.endsWith('.html') || nameLower.endsWith('.css') || nameLower.endsWith('.json') || nameLower.endsWith('.sql') || nameLower.endsWith('.yaml') || nameLower.endsWith('.yml')) {
+                    icon = '💻';
+                    typeLabel = 'Code/Data';
+                } else if (att.type === 'video') {
+                    icon = '🎬';
+                    typeLabel = 'Video';
+                }
+
                 card.className = 'attachment-preview-card';
                 card.innerHTML = `
-                    <span style="font-size:16px;">📄</span>
+                    <span style="font-size:18px;">${icon}</span>
                     <div class="attachment-card-info">
                         <span class="attachment-card-name">${escapeHtml(att.name)}</span>
-                        <span class="attachment-card-meta">${formatFileSize(att.size)}</span>
+                        <span class="attachment-card-meta">${typeLabel} (${formatFileSize(att.size)})</span>
                     </div>
                     <button type="button" class="attachment-remove-btn" data-index="${index}" title="Remove file">✕</button>
                 `;
@@ -1007,17 +1128,20 @@ document.addEventListener('DOMContentLoaded', () => {
     async function processFile(file) {
         if (!file) return;
 
-        // Size limit check (25MB)
-        if (file.size > 25 * 1024 * 1024) {
-            alert(`File "${file.name}" is too large. Maximum size is 25MB.`);
+        // Size limit check (50MB)
+        if (file.size > 50 * 1024 * 1024) {
+            alert(`File "${file.name}" is too large. Maximum size is 50MB.`);
             return;
         }
 
         let fileType = 'document';
-        if (file.type.startsWith('image/')) {
+        const nameLower = file.name.toLowerCase();
+        if (file.type.startsWith('image/') || nameLower.endsWith('.png') || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || nameLower.endsWith('.webp') || nameLower.endsWith('.gif')) {
             fileType = 'image';
-        } else if (file.type.startsWith('audio/') || file.name.endsWith('.m4a') || file.name.endsWith('.wav') || file.name.endsWith('.mp3')) {
+        } else if (file.type.startsWith('audio/') || nameLower.endsWith('.m4a') || nameLower.endsWith('.wav') || nameLower.endsWith('.mp3') || nameLower.endsWith('.ogg') || nameLower.endsWith('.flac')) {
             fileType = 'audio';
+        } else if (file.type.startsWith('video/') || nameLower.endsWith('.mp4') || nameLower.endsWith('.mov') || nameLower.endsWith('.webm') || nameLower.endsWith('.mkv')) {
+            fileType = 'video';
         }
 
         return new Promise((resolve) => {
@@ -1495,14 +1619,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     query: query,
                     conversation_id: currentConversationId,
                     top_k: appSettings.topK,
-                    attachments: attachmentsToSend
+                    api_key: localStorage.getItem('gemini_api_key') || appSettings.apiKey || '',
+                    attachments: attachmentsToSend,
+                    selected_model: modelSelector ? modelSelector.value : (localStorage.getItem('selected_model') || 'gemini-2.0-flash')
                 })
             });
 
             if (!response.ok) {
                 if (animationTimer) clearInterval(animationTimer);
                 const errData = await response.json().catch(() => ({ detail: response.statusText }));
-                contentEl.innerHTML = renderMarkdown(`⚠️ **Error (${response.status}):** ${errData.detail || 'Failed to generate answer. Please check your Gemini API key or login session.'}`);
+                contentEl.innerHTML = renderMarkdown(`⚠️ **Error (${response.status}):** ${errData.detail || 'Failed to generate answer.'}`);
                 return;
             }
 
@@ -1613,6 +1739,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            // ChatGPT & Gemini style long prompt clamping (Top 3-4 lines preview)
+            const bubbleText = msgWrapper.querySelector('.user-bubble-text');
+            if (bubbleText && content) {
+                const lineBreaks = (content.match(/\n/g) || []).length;
+                if (lineBreaks >= 3 || content.length > 220) {
+                    bubbleText.classList.add('clamped');
+
+                    const toggleBtn = document.createElement('button');
+                    toggleBtn.type = 'button';
+                    toggleBtn.className = 'user-prompt-toggle-btn';
+                    toggleBtn.title = 'Toggle full prompt';
+                    toggleBtn.innerHTML = `<span>Show more</span> <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+                    toggleBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const isClamped = bubbleText.classList.contains('clamped');
+                        if (isClamped) {
+                            bubbleText.classList.remove('clamped');
+                            toggleBtn.classList.add('expanded');
+                            toggleBtn.querySelector('span').textContent = 'Show less';
+                        } else {
+                            bubbleText.classList.add('clamped');
+                            toggleBtn.classList.remove('expanded');
+                            toggleBtn.querySelector('span').textContent = 'Show more';
+                        }
+                    });
+
+                    const bubble = msgWrapper.querySelector('.user-bubble');
+                    if (bubble) {
+                        bubble.appendChild(toggleBtn);
+                    }
+                }
+            }
+
             // Attach image click listener for Lightbox
             msgWrapper.querySelectorAll('.bubble-img-thumb').forEach(img => {
                 img.addEventListener('click', () => {
@@ -1692,6 +1852,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await authFetch('/api/auth/logout', { method: 'POST' });
             } catch (e) {}
             localStorage.removeItem('ghl_session_token');
+            localStorage.removeItem('ghl_user_data');
+            localStorage.removeItem('ghl_is_admin');
             currentUser = null;
             document.getElementById('admin-view').classList.add('hidden');
             showAuthView();
@@ -1883,4 +2045,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sidebar) sidebar.classList.remove('open');
         }
     });
+
+    // Knowledge Base File Upload Handlers
+    window.triggerKnowledgeUpload = function() {
+        const input = document.getElementById('admin-knowledge-file-input');
+        if (input) input.click();
+    };
+
+    window.handleKnowledgeFileSelected = async function(files) {
+        if (!files || files.length === 0) return;
+        const file = files[0];
+
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--accent-color);color:white;padding:14px 20px;border-radius:10px;font-size:14px;font-weight:500;z-index:99999;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:10px;animation:fadeIn 0.2s ease;';
+        toast.innerHTML = `<span>⏳</span> <span>Indexing <strong>${escapeHtml(file.name)}</strong> into ChromaDB Knowledge Base...</span>`;
+        document.body.appendChild(toast);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/knowledge/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            toast.remove();
+            if (res.ok && data.status === 'success') {
+                alert(`✅ ${data.message}\n\n• Document: ${data.filename}\n• Format: ${data.file_type.toUpperCase()}\n• Chunks Indexed: ${data.chunks_indexed}\n• Total Knowledge Base Chunks: ${data.total_db_chunks}`);
+            } else {
+                alert(`❌ Ingestion failed: ${data.message || 'Unknown error'}`);
+            }
+        } catch (err) {
+            toast.remove();
+            alert(`❌ Network error while uploading: ${err.message}`);
+        }
+    };
 });
