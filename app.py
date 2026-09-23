@@ -3,9 +3,9 @@ import sys
 
 # Vercel pysqlite3 override for ChromaDB SQLite compatibility
 try:
-    __import__('pysqlite3')
-    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-except ImportError:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except Exception:
     pass
 
 import asyncio

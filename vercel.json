@@ -12,12 +12,12 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/static/(.*)",
-      "destination": "/static/$1"
+      "source": "/health",
+      "destination": "/api/index.py"
     },
     {
-      "source": "/(.*)",
-      "destination": "/api/index.py"
+      "source": "/static/(.*)",
+      "destination": "/static/$1"
     }
   ]
 }
