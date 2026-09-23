@@ -42,6 +42,7 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 IS_VERCEL = bool(os.getenv("VERCEL"))
 LOCAL_DB_PATH = "/tmp/ghl_chroma_db" if IS_VERCEL else os.path.join(BASE_DIR, "ghl_chroma_db")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@xortlogix.com").strip().lower()
 
 def ensure_chroma_db_on_vercel():
     if IS_VERCEL and not os.path.exists(LOCAL_DB_PATH):
@@ -194,23 +195,25 @@ app.add_middleware(
 # Vercel Path Restoration Middleware
 @app.middleware("http")
 async def vercel_path_rewrite_middleware(request: Request, call_next):
-    # In Vercel serverless, retrieve the actual requested path from forwarding headers
-    orig_path = (
-        request.headers.get("x-invoke-path")
-        or request.headers.get("x-forwarded-uri")
-        or request.headers.get("x-original-uri")
-        or request.headers.get("x-real-origin-path")
-    )
-    if not orig_path:
-        matched = request.headers.get("x-matched-path")
-        if matched and ":" not in matched and "(" not in matched and "*" not in matched:
-            orig_path = matched
+    try:
+        orig_path = (
+            request.headers.get("x-invoke-path")
+            or request.headers.get("x-forwarded-uri")
+            or request.headers.get("x-original-uri")
+            or request.headers.get("x-real-origin-path")
+        )
+        if not orig_path:
+            matched = request.headers.get("x-matched-path")
+            if matched and ":" not in matched and "(" not in matched and "*" not in matched:
+                orig_path = matched
 
-    if orig_path:
-        clean_path = orig_path.split("?")[0]
-        # Only rewrite if current path is generic entrypoint or missing route
-        if request.scope.get("path") in ["/api/index.py", "/api/index", "/api", "/api/", "/index.py", "/"]:
-            request.scope["path"] = clean_path
+        if orig_path:
+            clean_path = orig_path.split("?")[0]
+            # Only rewrite if current path is generic entrypoint or missing route
+            if request.scope.get("path") in ["/api/index.py", "/api/index", "/api", "/api/", "/index.py", "/"]:
+                request.scope["path"] = clean_path
+    except Exception as e:
+        print(f"Path rewrite note: {e}")
     return await call_next(request)
 
 # Mount Static Assets Directory
