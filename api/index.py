@@ -10,50 +10,52 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-try:
-    from app import app
-except Exception as e:
-    tb = traceback.format_exc()
-    print("FATAL STARTUP ERROR IN APP.PY:", tb)
-    app = FastAPI(title="XortLogix High Level Assistant (Fallback)")
-    
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+app = FastAPI(title="XortLogix High Level Assistant")
 
-    @app.get("/health")
-    @app.get("/api/health")
-    async def health():
-        return {
-            "status": "degraded",
-            "service": "XortLogix High Level Assistant",
-            "error": str(e),
-            "traceback": tb.splitlines()
-        }
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
-    async def catch_all_error(full_path: str):
+@app.get("/health")
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "XortLogix High Level Assistant",
+        "runtime": "Vercel Serverless Python 3.12"
+    }
+
+# Lazy loading of main application to guarantee zero cold-start crashes
+_main_app = None
+
+def get_main_app():
+    global _main_app
+    if _main_app is None:
+        from app import app as loaded_app
+        _main_app = loaded_app
+    return _main_app
+
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"])
+async def dispatch_to_main_app(request: Request, full_path: str):
+    # Direct fast-path for health
+    if full_path in ["health", "api/health"]:
+        return JSONResponse({"status": "healthy", "service": "XortLogix High Level Assistant"})
+
+    try:
+        main = get_main_app()
+        return await main(request.scope, request.receive, request._send)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("Dispatch error:", tb)
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
-                "message": "FastAPI initialization failed on Vercel",
-                "exception": str(e),
+                "message": f"Serverless execution error: {str(e)}",
                 "traceback": tb.splitlines()
             }
         )
-
-# Direct fallback route handlers on app for explicit health/status
-@app.get("/api/index.py")
-@app.get("/api/index")
-@app.get("/api")
-async def root_api_status():
-    return {
-        "status": "online",
-        "service": "XortLogix High Level Assistant",
-        "runtime": "Vercel Python 3.12 Serverless"
-    }
