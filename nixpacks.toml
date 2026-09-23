@@ -2,7 +2,7 @@
 nixPkgs = ["python310"]
 
 [phases.install]
-cmds = ["pip install -r 'GHL RAG/requirements.txt'"]
+cmds = ["pip install -r requirements.txt"]
 
 [start]
-cmd = "cd 'GHL RAG' && uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}"
+cmd = "python start.py"
